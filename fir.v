@@ -61,21 +61,24 @@ reg [(pDATA_WIDTH-1):0] data_len;
 reg coef_get;//
 reg [3:0]addr_pointer;//
 reg signed [31:0]acc_temp;//nomral sure be 64bit
+reg D_bram_ready;
+reg [3:0]D_bram_ready_counter;
+
+wire [31:0]a;
+wire [31:0]b;
+wire [31:0]adder;
 
 parameter [1:0] SS_idle = 2'b00,
                 RD_data = 2'b01,
                 WT_conv = 2'b10,
                 OV_conv = 2'b11;
-
 parameter [1:0] AR_idle = 2'b00,
                 TS_tap  = 2'b01,
                 TS_ap = 2'b10;
-
 parameter [1:0] AW_idle		= 2'b00,
 				ap_ctrl     = 2'b01,
                 RD_data_len = 2'b10,
                 RD_tap      = 2'b11;
-
 parameter [3:0] addr_0  = 4'd0,
                 addr_1  = 4'd1,
                 addr_2  = 4'd2,
@@ -87,13 +90,18 @@ parameter [3:0] addr_0  = 4'd0,
                 addr_8  = 4'd8,
                 addr_9  = 4'd9,
                 addr_10 = 4'd10;
-                
+					 
+assign a =  ((SS_curr_state == SS_idle && ap_state == 3'b000 && D_bram_ready == 1'b0)) ? D_bram_ready_counter :
+            (SS_curr_state == RD_data) ? addr_pointer :
+            (SS_curr_state == OV_conv) ? acc_temp : 32'd0;
+assign b =  ((SS_curr_state == SS_idle && ap_state == 3'b000 && D_bram_ready == 1'b0)) ? 1'b1 :
+            (SS_curr_state == RD_data) ? 1'b1 :
+            (SS_curr_state == OV_conv) ? $signed(tap_Do) * $signed(data_Do) : 32'd0;				
+assign adder =  a + b;              
 assign rdata =  AR_state == TS_ap ? {29'd0,ap_state} :
 				AR_state == TS_tap ? tap_Do : 32'd0;
 
 //conv addr_contorl str------------------------------------------
-
-
 always@(negedge  axis_rst_n or posedge axis_clk)begin
     if(!axis_rst_n)begin
         addr_data <= 4'd0;
@@ -138,7 +146,6 @@ end
 //conv addr_contorl end------------------------------------------
 
 //AW contorol str-----------------------------------------------
-
 always@(*)begin
     wready = 1'b0;
     awready = 1'b0;
@@ -171,7 +178,6 @@ end
 //AW contorol end-----------------------------------------------
 
 //ap_state str--------------------------------------------------
-
 //bit[2]=>idle bit[1]=>done bit[0]=>start
 always@(negedge  axis_rst_n or posedge axis_clk)begin
     if(!axis_rst_n)ap_state <= 3'b100;
@@ -202,7 +208,6 @@ end
 //AR contorol end-----------------------------------------------
 
 //SS contorol str-----------------------------------------------
-
 always @(negedge  axis_rst_n or posedge axis_clk) begin
     if(!axis_rst_n)SS_curr_state <= SS_idle;
     else SS_curr_state <= SS_next_state;
@@ -239,7 +244,6 @@ end
 //SS contorol end-----------------------------------------------
 
 //SM contorol str-----------------------------------------------
-
 always@(*)begin
 	sm_tvalid = (addr_10_fg && sm_trans_done == 1'b0) ? 1'b1 : 1'b0;
 	sm_tdata = (addr_10_fg && sm_trans_done == 1'b0) ? acc_temp : 32'd0;
@@ -256,11 +260,9 @@ always@(negedge  axis_rst_n or posedge axis_clk)begin
     else if(ss_tlast && ss_tready)sm_tlast <= 1'b1;
 	else if(ap_state == 3'b100)sm_tlast <= 1'b0;
 end
-
 //SM contorol end-----------------------------------------------
 
 //data length str------------------------------------------------
-
 always@(negedge  axis_rst_n or posedge axis_clk)begin
     if(!axis_rst_n)data_len <= 32'd0;
     else if(AW_state == RD_data_len)data_len <= wdata;
@@ -268,7 +270,6 @@ end
 //data length end------------------------------------------------
 
 //coef trans & check str-----------------------------------------
-
 always@(*)begin
     tap_WE = (AW_state == RD_tap && coef_get == 1'b0) ? 4'b1111 : 4'b0000;
     tap_EN = (AW_state == RD_tap && coef_get == 1'b0) ? 1'b1 : 
@@ -287,9 +288,6 @@ end
 //coef trans & check end-----------------------------------------
 
 //data trans & check str-----------------------------------------
-reg D_bram_ready;
-reg [3:0]D_bram_ready_counter;
-
 always@(*)begin
     data_WE =   (SS_curr_state == SS_idle && ap_state == 3'b000) ? 4'b1111 :
                 SS_curr_state == RD_data ? 4'b1111 : 4'b0000;
@@ -326,7 +324,6 @@ end
 //data trans & check end-----------------------------------------
 
 //fir conv str---------------------------------------------------
-
 always@(negedge  axis_rst_n or posedge axis_clk)begin
     if(!axis_rst_n)begin
         acc_temp <= 32'd0;
@@ -335,16 +332,5 @@ always@(negedge  axis_rst_n or posedge axis_clk)begin
     else if(SS_curr_state == RD_data)acc_temp <= 32'd0;
 end
 //fir conv end---------------------------------------------------
-
-wire [31:0]a;
-wire [31:0]b;
-wire [31:0]adder;
-assign a =  ((SS_curr_state == SS_idle && ap_state == 3'b000 && D_bram_ready == 1'b0)) ? D_bram_ready_counter :
-            (SS_curr_state == RD_data) ? addr_pointer :
-            (SS_curr_state == OV_conv) ? acc_temp : 32'd0;
-assign b =  ((SS_curr_state == SS_idle && ap_state == 3'b000 && D_bram_ready == 1'b0)) ? 1'b1 :
-            (SS_curr_state == RD_data) ? 1'b1 :
-            (SS_curr_state == OV_conv) ? $signed(tap_Do) * $signed(data_Do) : 32'd0;
-assign adder =  a + b;
 
 endmodule
